@@ -1,0 +1,14 @@
+{
+  "name": "backend",
+  "module": "server.js",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "socket.io": "^4.8.3"
+  }
+}
