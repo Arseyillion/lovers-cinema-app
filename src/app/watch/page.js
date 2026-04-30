@@ -63,14 +63,14 @@ export default function WatchPage() {
     };
   }, [roomId]);
 
-  // WebRTC functions
-  const startVideoCall = async () => {
-    console.log("Starting video call...");
+  // Initialize peer connection with media and event handlers
+  const initPeerConnection = async () => {
+    console.log("Initializing peer connection...");
     
     const socket = socketRef.current;
     if (!socket) {
       console.error("Socket not available");
-      return;
+      return null;
     }
     
     try {
@@ -119,7 +119,33 @@ export default function WatchPage() {
         }
       };
       
-      // Create and send offer (first user creates offer)
+      console.log("Peer connection initialized");
+      return peerConnection;
+      
+    } catch (error) {
+      console.error("Error initializing peer connection:", error);
+      return null;
+    }
+  };
+  
+  // Start video call as initiator (creates and sends offer)
+  const startVideoCall = async () => {
+    console.log("Starting video call as initiator...");
+    
+    const socket = socketRef.current;
+    if (!socket) {
+      console.error("Socket not available");
+      return;
+    }
+    
+    const peerConnection = await initPeerConnection();
+    if (!peerConnection) {
+      console.error("Failed to initialize peer connection");
+      return;
+    }
+    
+    try {
+      // Create and send offer (initiator creates offer)
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
       
@@ -131,7 +157,7 @@ export default function WatchPage() {
       console.log("Offer sent");
       
     } catch (error) {
-      console.error("Error starting video call:", error);
+      console.error("Error creating offer:", error);
     }
   };
 
@@ -144,24 +170,33 @@ export default function WatchPage() {
       return;
     }
     
+    // Initialize peer connection if not already done
     if (!peerConnectionRef.current) {
-      await startVideoCall();
+      const peerConnection = await initPeerConnection();
+      if (!peerConnection) {
+        console.error("Failed to initialize peer connection for offer");
+        return;
+      }
     }
     
     const peerConnection = peerConnectionRef.current;
     
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-    
-    // Create answer
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-    
-    socket.emit("answer", {
-      roomId,
-      answer
-    });
-    
-    console.log("Answer sent");
+    try {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+      
+      // Create answer
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      
+      socket.emit("answer", {
+        roomId,
+        answer
+      });
+      
+      console.log("Answer sent");
+    } catch (error) {
+      console.error("Error handling offer:", error);
+    }
   };
 
   const handleAnswer = async (data) => {
