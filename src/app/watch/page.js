@@ -21,12 +21,16 @@ export default function WatchPage() {
 
     // Initialize socket only once
     if (!socketRef.current) {
-      socketRef.current = io("http://localhost:3002");
+      socketRef.current = io("https://lovers-cinema-backend.onrender.com");
       console.log("Socket initialized:", socketRef.current.id);
     }
+    console.log("socket initilaized", socketRef.current);
 
     const socket = socketRef.current;
     socket.emit("join-room", roomId);
+    // Sends event named "join-room"
+    // With data: roomId (e.g., "abc-123")
+    // To your backend server
 
     socket.on("user-joined", () => {
       alert("Someone joined your room 👀");
@@ -34,7 +38,7 @@ export default function WatchPage() {
 
     socket.on("room-users", (count) => {
       console.log("Users in room:", count);
-      
+
       // Start video call when second user joins
       if (count === 2) {
         startVideoCall();
@@ -52,10 +56,10 @@ export default function WatchPage() {
       socket.off("offer");
       socket.off("answer");
       socket.off("ice-candidate");
-      
+
       // Clean up video call
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -66,41 +70,41 @@ export default function WatchPage() {
   // WebRTC functions
   const startVideoCall = async () => {
     console.log("Starting video call...");
-    
+
     const socket = socketRef.current;
     if (!socket) {
       console.error("Socket not available");
       return;
     }
-    
+
     try {
       // Get local media stream
       const localStream = await navigator.mediaDevices.getUserMedia({
         video: true,
-        audio: true
+        audio: true,
       });
-      
+
       localStreamRef.current = localStream;
-      
+
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localStream;
       }
-      
+
       // Create peer connection
       const peerConnection = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
-      
+
       peerConnectionRef.current = peerConnection;
-      
+
       // Add local stream to peer connection
-      localStream.getTracks().forEach(track => {
+      localStream.getTracks().forEach((track) => {
         peerConnection.addTrack(track, localStream);
       });
-      
+
       // Set initial call volume
       updateCallVolume(callVolume);
-      
+
       // Handle remote stream
       peerConnection.ontrack = (event) => {
         console.log("Received remote stream");
@@ -108,28 +112,27 @@ export default function WatchPage() {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
       };
-      
+
       // Handle ICE candidates
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
           socket.emit("ice-candidate", {
             roomId,
-            candidate: event.candidate
+            candidate: event.candidate,
           });
         }
       };
-      
+
       // Create and send offer (first user creates offer)
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
-      
+
       socket.emit("offer", {
         roomId,
-        offer
+        offer,
       });
-      
+
       console.log("Offer sent");
-      
     } catch (error) {
       console.error("Error starting video call:", error);
     }
@@ -137,45 +140,49 @@ export default function WatchPage() {
 
   const handleOffer = async (data) => {
     console.log("Received offer");
-    
+
     const socket = socketRef.current;
     if (!socket) {
       console.error("Socket not available");
       return;
     }
-    
+
     if (!peerConnectionRef.current) {
       await startVideoCall();
     }
-    
+
     const peerConnection = peerConnectionRef.current;
-    
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-    
+
+    await peerConnection.setRemoteDescription(
+      new RTCSessionDescription(data.offer),
+    );
+
     // Create answer
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
-    
+
     socket.emit("answer", {
       roomId,
-      answer
+      answer,
     });
-    
+
     console.log("Answer sent");
   };
 
   const handleAnswer = async (data) => {
     console.log("Received answer");
-    
+
     const peerConnection = peerConnectionRef.current;
     if (peerConnection) {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
+      await peerConnection.setRemoteDescription(
+        new RTCSessionDescription(data.answer),
+      );
     }
   };
 
   const handleIceCandidate = async (data) => {
     console.log("Received ICE candidate");
-    
+
     const peerConnection = peerConnectionRef.current;
     if (peerConnection) {
       await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -207,7 +214,10 @@ export default function WatchPage() {
   useEffect(() => {
     const video = videoRef.current;
     const socket = socketRef.current;
-    if (!video || !roomId || !socket) return;
+    if (!video || !roomId || !socket) {
+      console.log("Video sync setup incomplete:", { video: !!video, roomId: !!roomId, socket: !!socket });
+      return;
+    }
 
     let isRemoteAction = false;
 
@@ -243,22 +253,24 @@ export default function WatchPage() {
     // 🔹 REMOTE PLAY
     const handleRemotePlay = (time) => {
       console.log("REMOTE PLAY received at", time);
-      
+
       isRemoteAction = true;
       video.currentTime = time;
-      
+
       // Use user gesture for autoplay compliance
       const playPromise = video.play();
       if (playPromise !== undefined) {
-        playPromise.then(() => {
-          console.log("Remote play successful");
-          setTimeout(() => {
+        playPromise
+          .then(() => {
+            console.log("Remote play successful");
+            setTimeout(() => {
+              isRemoteAction = false;
+            }, 100);
+          })
+          .catch((error) => {
+            console.log("Remote play failed:", error);
             isRemoteAction = false;
-          }, 100);
-        }).catch((error) => {
-          console.log("Remote play failed:", error);
-          isRemoteAction = false;
-        });
+          });
       }
     };
 
@@ -277,6 +289,8 @@ export default function WatchPage() {
 
     socket.on("play", handleRemotePlay);
     socket.on("pause", handleRemotePause);
+    
+    console.log("Socket event listeners attached for play/pause");
 
     return () => {
       video.removeEventListener("play", handlePlay);
@@ -284,11 +298,10 @@ export default function WatchPage() {
       socket.off("play", handleRemotePlay);
       socket.off("pause", handleRemotePause);
     };
-  }, [roomId]);
-
+  }, [roomId, socketRef.current]);
 
   return (
-    <div style={{ padding: 20, position: 'relative' }}>
+    <div style={{ padding: 20, position: "relative" }}>
       <h1>Watch Room</h1>
 
       <p>
@@ -313,21 +326,25 @@ export default function WatchPage() {
       </video>
 
       {/* Volume Controls */}
-      <div style={{
-        position: 'absolute',
-        top: '80px',
-        left: '20px',
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        padding: '15px',
-        borderRadius: '8px',
-        color: 'white',
-        fontSize: '14px'
-      }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Volume Controls</h4>
-        
+      <div
+        style={{
+          position: "absolute",
+          top: "80px",
+          left: "20px",
+          backgroundColor: "rgba(0,0,0,0.8)",
+          padding: "15px",
+          borderRadius: "8px",
+          color: "white",
+          fontSize: "14px",
+        }}
+      >
+        <h4 style={{ margin: "0 0 10px 0", fontSize: "16px" }}>
+          Volume Controls
+        </h4>
+
         {/* Video Volume */}
-        <div style={{ marginBottom: '15px' }}>
-          <label style={{ display: 'block', marginBottom: '5px' }}>
+        <div style={{ marginBottom: "15px" }}>
+          <label style={{ display: "block", marginBottom: "5px" }}>
             🎬 Video Volume: {Math.round(videoVolume * 100)}%
           </label>
           <input
@@ -337,13 +354,13 @@ export default function WatchPage() {
             step="0.1"
             value={videoVolume}
             onChange={(e) => updateVideoVolume(parseFloat(e.target.value))}
-            style={{ width: '150px' }}
+            style={{ width: "150px" }}
           />
         </div>
-        
+
         {/* Call Volume */}
         <div>
-          <label style={{ display: 'block', marginBottom: '5px' }}>
+          <label style={{ display: "block", marginBottom: "5px" }}>
             📞 Call Volume: {Math.round(callVolume * 100)}%
           </label>
           <input
@@ -353,51 +370,57 @@ export default function WatchPage() {
             step="0.1"
             value={callVolume}
             onChange={(e) => updateCallVolume(parseFloat(e.target.value))}
-            style={{ width: '150px' }}
+            style={{ width: "150px" }}
           />
         </div>
       </div>
 
       {/* Video call overlay */}
-      <div style={{
-        position: 'absolute',
-        top: '80px',
-        right: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '10px'
-      }}>
+      <div
+        style={{
+          position: "absolute",
+          top: "80px",
+          right: "20px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "10px",
+        }}
+      >
         {/* Local video (self) */}
         <div>
-          <p style={{ margin: '0 0 5px 0', fontSize: '12px', color: '#666' }}>You</p>
+          <p style={{ margin: "0 0 5px 0", fontSize: "12px", color: "#666" }}>
+            You
+          </p>
           <video
             ref={localVideoRef}
             autoPlay
             muted
             style={{
-              width: '150px',
-              height: '150px',
-              objectFit: 'cover',
-              backgroundColor: '#333',
-              borderRadius: '8px',
-              border: '2px solid #4CAF50'
+              width: "150px",
+              height: "150px",
+              objectFit: "cover",
+              backgroundColor: "#333",
+              borderRadius: "8px",
+              border: "2px solid #4CAF50",
             }}
           />
         </div>
 
         {/* Remote video (other person) */}
         <div>
-          <p style={{ margin: '0 0 5px 0', fontSize: '12px', color: '#666' }}>Friend</p>
+          <p style={{ margin: "0 0 5px 0", fontSize: "12px", color: "#666" }}>
+            Friend
+          </p>
           <video
             ref={remoteVideoRef}
             autoPlay
             style={{
-              width: '150px',
-              height: '150px',
-              objectFit: 'cover',
-              backgroundColor: '#333',
-              borderRadius: '8px',
-              border: '2px solid #2196F3'
+              width: "150px",
+              height: "150px",
+              objectFit: "cover",
+              backgroundColor: "#333",
+              borderRadius: "8px",
+              border: "2px solid #2196F3",
             }}
           />
         </div>
