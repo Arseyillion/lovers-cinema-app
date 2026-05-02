@@ -64,6 +64,9 @@ export default function WatchClient({ roomId }) {
     return () => {
       socket.off("user-joined");
       socket.off("room-users");
+      socket.off("connect");
+      socket.off("disconnect");
+      socket.off("connect_error");
       socket.off("offer", handleOffer);
       socket.off("answer", handleAnswer);
       socket.off("ice-candidate", handleIceCandidate);
