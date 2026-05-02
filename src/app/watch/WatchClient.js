@@ -12,6 +12,7 @@ export default function WatchClient({ roomId }) {
   const localStreamRef = useRef(null);
   const [videoVolume, setVideoVolume] = useState(1);
   const [callVolume, setCallVolume] = useState(1);
+  const [remoteStreamActive, setRemoteStreamActive] = useState(false);
 
   useEffect(() => {
     if (!roomId) return;
@@ -83,19 +84,34 @@ export default function WatchClient({ roomId }) {
 
   const initPeerConnection = async () => {
     console.log("Initializing peer connection...");
-
+    
     const socket = socketRef.current;
     if (!socket) {
       console.error("Socket not available");
       return null;
     }
-
+    
+    // Clean up existing stream if any
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    
     try {
+      // Get local media stream with better constraints
       const localStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: true,
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
-
+      
       localStreamRef.current = localStream;
 
       if (localVideoRef.current) {
@@ -115,9 +131,21 @@ export default function WatchClient({ roomId }) {
       updateCallVolume(callVolume);
 
       peerConnection.ontrack = (event) => {
-        console.log("Received remote stream");
+        console.log("Received remote stream:", event);
+        console.log("Number of streams:", event.streams.length);
+        if (event.streams.length > 0) {
+          console.log("Remote stream tracks:", event.streams[0].getTracks());
+          setRemoteStreamActive(true);
+        } else {
+          setRemoteStreamActive(false);
+        }
+        
         if (remoteVideoRef.current) {
+          console.log("Setting remote video srcObject");
           remoteVideoRef.current.srcObject = event.streams[0];
+          remoteVideoRef.current.play().catch(err => console.log("Remote video play error:", err));
+        } else {
+          console.error("Remote video ref is null");
         }
       };
 
@@ -134,6 +162,19 @@ export default function WatchClient({ roomId }) {
       return peerConnection;
     } catch (error) {
       console.error("Error initializing peer connection:", error);
+      
+      // Handle specific device errors
+      if (error.name === 'NotReadableError' || error.name === 'DeviceInUseError') {
+        console.error("Camera/microphone is already in use by another application");
+        alert("Camera or microphone is already in use. Please:\n1. Close other video apps/tabs using camera\n2. Refresh the page and try again\n3. Grant camera permission when prompted");
+      } else if (error.name === 'NotAllowedError') {
+        console.error("Camera/microphone permission denied");
+        alert("Camera or microphone permission denied. Please allow camera access in your browser settings and refresh the page.");
+      } else if (error.name === 'NotFoundError') {
+        console.error("No camera/microphone found");
+        alert("No camera or microphone found. Please connect a camera and microphone.");
+      }
+      
       return null;
     }
   };
@@ -421,20 +462,37 @@ export default function WatchClient({ roomId }) {
 
         <div>
           <p style={{ margin: "0 0 5px 0", fontSize: "12px", color: "#666" }}>
-            Friend
+            Friend {remoteStreamActive ? "🟢" : "🔴"}
           </p>
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            style={{
-              width: "150px",
-              height: "150px",
-              objectFit: "cover",
-              backgroundColor: "#333",
-              borderRadius: "8px",
-              border: "2px solid #2196F3",
-            }}
-          />
+          <div style={{ position: "relative" }}>
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              style={{
+                width: "150px",
+                height: "150px",
+                objectFit: "cover",
+                backgroundColor: "#333",
+                borderRadius: "8px",
+                border: remoteStreamActive ? "2px solid #2196F3" : "2px solid #f44336",
+              }}
+            />
+            {!remoteStreamActive && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  left: "50%",
+                  transform: "translate(-50%, -50%)",
+                  color: "#fff",
+                  fontSize: "12px",
+                  textAlign: "center",
+                }}
+              >
+                Waiting for friend...
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
